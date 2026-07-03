@@ -1,6 +1,7 @@
 package com.unopower.userservice.service;
 
 import com.unopower.userservice.dto.AuthResponse;
+import com.unopower.userservice.dto.GuestRequest;
 import com.unopower.userservice.dto.LoginRequest;
 import com.unopower.userservice.dto.RegistroRequest;
 import com.unopower.userservice.model.Usuario;
@@ -54,5 +55,14 @@ public class UsuarioService {
 
         String token = jwtIssuer.issueFor(usuario.getId(), usuario.getUsername());
         return new AuthResponse(usuario.getId(), usuario.getUsername(), token);
+    }
+
+    /**
+     * EC-07 / HU-01: permite jugar sin registro. Identidad efimera, no se persiste en user_db.
+     */
+    public AuthResponse guest(GuestRequest request) {
+        String guestId = "guest-" + java.util.UUID.randomUUID();
+        String token = jwtIssuer.issueFor(guestId, request.nombre(), true);
+        return new AuthResponse(guestId, request.nombre(), token);
     }
 }

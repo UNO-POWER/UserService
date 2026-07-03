@@ -19,6 +19,10 @@ public class JwtIssuer {
     }
 
     public String issueFor(String userId, String username) {
+        return issueFor(userId, username, false);
+    }
+
+    public String issueFor(String userId, String username, boolean guest) {
         SecretKey key = Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
         Date now = new Date();
         Date expiry = new Date(now.getTime() + jwtProperties.getExpirationMs());
@@ -26,6 +30,7 @@ public class JwtIssuer {
         return Jwts.builder()
                 .subject(userId)
                 .claim("username", username)
+                .claim("guest", guest)
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(key)

@@ -1,6 +1,7 @@
 package com.unopower.userservice.controller;
 
 import com.unopower.userservice.dto.AuthResponse;
+import com.unopower.userservice.dto.GuestRequest;
 import com.unopower.userservice.dto.LoginRequest;
 import com.unopower.userservice.dto.RegistroRequest;
 import com.unopower.userservice.service.UsuarioService;
@@ -28,5 +29,10 @@ public class UsuarioController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(usuarioService.login(request));
+    }
+
+    @PostMapping("/guest")
+    public ResponseEntity<AuthResponse> guest(@Valid @RequestBody GuestRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(usuarioService.guest(request));
     }
 }
