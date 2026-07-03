@@ -1,0 +1,33 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: user-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/uno?currentSchema=user_db}
+    username: ${SPRING_DATASOURCE_USERNAME:uno}
+    password: ${SPRING_DATASOURCE_PASSWORD:uno}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        default_schema: user_db
+    open-in-view: false
+
+jwt:
+  secret: ${JWT_SECRET:change-this-to-a-long-random-secret-shared-by-gateway-and-user-service}
+  expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  config: classpath:logback-spring.xml
