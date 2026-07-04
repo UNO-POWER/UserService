@@ -1,10 +1,12 @@
 package com.unopower.userservice.controller;
 
 import com.unopower.userservice.dto.AuthResponse;
+import com.unopower.userservice.dto.EstadisticasResponse;
 import com.unopower.userservice.dto.GuestRequest;
 import com.unopower.userservice.dto.LoginRequest;
 import com.unopower.userservice.dto.RegistroRequest;
 import com.unopower.userservice.service.UsuarioService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -34,5 +36,14 @@ public class UsuarioController {
     @PostMapping("/guest")
     public ResponseEntity<AuthResponse> guest(@Valid @RequestBody GuestRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(usuarioService.guest(request));
+    }
+
+    @GetMapping("/me/stats")
+    public ResponseEntity<EstadisticasResponse> misEstadisticas(HttpServletRequest httpRequest) {
+        String userId = httpRequest.getHeader("X-User-Id");
+        if (userId == null || userId.isBlank()) {
+            throw new IllegalStateException("Encabezado X-User-Id ausente (deberia venir del API Gateway)");
+        }
+        return ResponseEntity.ok(usuarioService.obtenerEstadisticas(userId));
     }
 }

@@ -1,6 +1,7 @@
 package com.unopower.userservice.service;
 
 import com.unopower.userservice.dto.AuthResponse;
+import com.unopower.userservice.dto.EstadisticasResponse;
 import com.unopower.userservice.dto.GuestRequest;
 import com.unopower.userservice.dto.LoginRequest;
 import com.unopower.userservice.dto.RegistroRequest;
@@ -64,5 +65,25 @@ public class UsuarioService {
         String guestId = "guest-" + java.util.UUID.randomUUID();
         String token = jwtIssuer.issueFor(guestId, request.nombre(), true);
         return new AuthResponse(guestId, request.nombre(), token);
+    }
+
+    @Transactional(readOnly = true)
+    public EstadisticasResponse obtenerEstadisticas(String userId) {
+        Usuario usuario = usuarioRepository.findById(userId)
+                .orElseThrow(() -> new UsuarioNoEncontradoException(userId));
+        return new EstadisticasResponse(usuario.getUsername(), usuario.getPartidasJugadas(),
+                usuario.getPartidasGanadas(), usuario.getRachaActual());
+    }
+
+    /**
+     * Llamado por Game Service al finalizar una partida. Best-effort: si el userId es de
+     * un invitado (no persistido en user_db), no hace nada.
+     */
+    @Transactional
+    public void registrarResultadoPartida(String userId, boolean gano) {
+        usuarioRepository.findById(userId).ifPresent(usuario -> {
+            usuario.registrarResultadoPartida(gano);
+            log.info("estadisticas actualizadas userId={} gano={}", userId, gano);
+        });
     }
 }

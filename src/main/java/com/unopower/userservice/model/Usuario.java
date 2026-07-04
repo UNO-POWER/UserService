@@ -66,4 +66,15 @@ public class Usuario {
     public Instant getCreadoEn() {
         return creadoEn;
     }
+
+    /** HU-07/HU-03: llamado por Game Service al terminar una partida. */
+    public void registrarResultadoPartida(boolean gano) {
+        this.partidasJugadas++;
+        if (gano) {
+            this.partidasGanadas++;
+            this.rachaActual++;
+        } else {
+            this.rachaActual = 0;
+        }
+    }
 }
