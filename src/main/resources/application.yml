@@ -20,6 +20,9 @@ jwt:
   secret: ${JWT_SECRET:change-this-to-a-long-random-secret-shared-by-gateway-and-user-service}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}
 
+internal:
+  api-key: ${INTERNAL_API_KEY:dev-internal-key-change-in-prod}
+
 management:
   endpoints:
     web:
