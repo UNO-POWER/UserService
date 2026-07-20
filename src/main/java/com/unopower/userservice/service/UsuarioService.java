@@ -33,8 +33,12 @@ public class UsuarioService {
         if (usuarioRepository.existsByUsername(request.username())) {
             throw new UsernameYaExisteException(request.username());
         }
+        String email = request.email().strip().toLowerCase();
+        if (usuarioRepository.existsByEmail(email)) {
+            throw new EmailYaExisteException(email);
+        }
 
-        Usuario usuario = new Usuario(request.username(), passwordEncoder.encode(request.password()));
+        Usuario usuario = new Usuario(request.username(), email, passwordEncoder.encode(request.password()));
         usuario = usuarioRepository.save(usuario);
 
         log.info("usuario registrado username={}", usuario.getUsername());
@@ -43,9 +47,12 @@ public class UsuarioService {
         return new AuthResponse(usuario.getId(), usuario.getUsername(), token);
     }
 
+    /** Login dual: el campo "username" acepta el nombre de usuario o el correo registrado. */
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
-        Usuario usuario = usuarioRepository.findByUsername(request.username())
+        String identificador = request.username().strip();
+        Usuario usuario = usuarioRepository
+                .findByUsernameOrEmail(identificador, identificador.toLowerCase())
                 .orElseThrow(CredencialesInvalidasException::new);
 
         if (!passwordEncoder.matches(request.password(), usuario.getPasswordHash())) {
@@ -65,6 +72,28 @@ public class UsuarioService {
         String guestId = "guest-" + java.util.UUID.randomUUID();
         String token = jwtIssuer.issueFor(guestId, request.nombre(), true);
         return new AuthResponse(guestId, request.nombre(), token);
+    }
+
+    /**
+     * Cambio de username desde Configuracion. Re-emite el JWT porque el claim "username"
+     * del token vigente quedaria desactualizado (Game Service lo usa para chat/roster).
+     * Los invitados no estan persistidos, asi que caen en UsuarioNoEncontradoException.
+     */
+    @Transactional
+    public AuthResponse actualizarUsername(String userId, String nuevoUsername) {
+        Usuario usuario = usuarioRepository.findById(userId)
+                .orElseThrow(() -> new UsuarioNoEncontradoException(userId));
+
+        if (!usuario.getUsername().equals(nuevoUsername)
+                && usuarioRepository.existsByUsername(nuevoUsername)) {
+            throw new UsernameYaExisteException(nuevoUsername);
+        }
+
+        usuario.cambiarUsername(nuevoUsername);
+        log.info("username actualizado userId={} nuevo={}", userId, nuevoUsername);
+
+        String token = jwtIssuer.issueFor(usuario.getId(), usuario.getUsername());
+        return new AuthResponse(usuario.getId(), usuario.getUsername(), token);
     }
 
     @Transactional(readOnly = true)

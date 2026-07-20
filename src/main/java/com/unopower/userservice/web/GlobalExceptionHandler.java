@@ -1,6 +1,7 @@
 package com.unopower.userservice.web;
 
 import com.unopower.userservice.service.CredencialesInvalidasException;
+import com.unopower.userservice.service.EmailYaExisteException;
 import com.unopower.userservice.service.UsernameYaExisteException;
 import com.unopower.userservice.service.UsuarioNoEncontradoException;
 import org.springframework.http.HttpStatus;
@@ -18,6 +19,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(UsernameYaExisteException.class)
     public ResponseEntity<Map<String, Object>> handleUsernameYaExiste(UsernameYaExisteException ex) {
+        return build(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(EmailYaExisteException.class)
+    public ResponseEntity<Map<String, Object>> handleEmailYaExiste(EmailYaExisteException ex) {
         return build(HttpStatus.CONFLICT, ex.getMessage());
     }
 
