@@ -6,7 +6,6 @@
 [![Java](https://img.shields.io/badge/Java-21-orange)]()
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-brightgreen)]()
 [![Tests](https://img.shields.io/badge/tests-16%20passing-success)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
 
 ---
 
@@ -31,8 +30,7 @@
 17. [Solución de problemas](#17-solución-de-problemas)
 18. [Roadmap](#18-roadmap)
 19. [Contribución](#19-contribución)
-20. [Licencia](#20-licencia)
-21. [Autor](#21-autor)
+20. [Autor](#20-autor)
 
 ---
 
@@ -42,8 +40,8 @@
 Arena: registro y login con contraseña, acceso como **invitado** sin registro, emisión de **JWT**
 firmado, y persistencia de **estadísticas** (partidas jugadas, ganadas y racha actual).
 
-No tiene UI propia: es consumido por el [API Gateway](../APIGATEWAY) (rutas públicas `/api/usuarios/**`)
-y notificado internamente por el [Game Service](../GameService) al terminar cada partida.
+No tiene UI propia: es consumido por el [API Gateway](https://github.com/UNO-POWER/APIGATEWAY) (rutas públicas `/api/usuarios/**`)
+y notificado internamente por el [Game Service](https://github.com/UNO-POWER/GameService) al terminar cada partida.
 
 ### Historias de usuario que implementa
 
@@ -88,7 +86,7 @@ sequenceDiagram
 
 ## 2. Arquitectura
 
-Ubicación dentro del sistema (ver [arquitectura completa](../README.md#3-arquitectura)):
+Ubicación dentro del sistema:
 
 ```
                     ┌──────────────┐
@@ -252,15 +250,14 @@ docker run -p 8081:8081 \
   uno-user-service
 ```
 
-### Docker Compose (stack completo)
+### Docker Compose (orquestación multi-servicio)
 
-Este servicio **no se levanta solo** en producción real — forma parte del
-[`docker-compose.yml`](../docker-compose.yml) raíz junto a los otros 5 servicios. Ver la
-[guía de infraestructura](../deploy/README.md) para el paso a paso completo.
+En un entorno completo este servicio no se levanta solo: se orquesta junto a Postgres, el API
+Gateway y los demás servicios con Docker Compose, usando la imagen que se construye desde el
+`Dockerfile` de este repositorio.
 
 ```bash
-# desde la carpeta raíz del proyecto (que contiene los 6 repos)
-docker compose up -d --build user-service
+docker build -t uno-user-service .
 ```
 
 ---
@@ -493,9 +490,9 @@ Llamado exclusivamente por Game Service al finalizar una partida.
 
 ## 11. Base de datos
 
-Schema propio: **`user_db`** (dentro de la misma instancia PostgreSQL que `lobby_db`, ver
-[`infra/postgres/init/01-schemas.sql`](../infra/postgres/init/01-schemas.sql) — un solo RDS/instancia
-con un schema por servicio).
+Schema propio: **`user_db`** — una única instancia PostgreSQL alberga un schema por servicio
+(`user_db` para este servicio, `lobby_db` para Lobby Service), lo que da aislamiento lógico sin el
+costo operativo de varias bases separadas.
 
 ### Tabla `usuarios`
 
@@ -587,7 +584,7 @@ docker compose logs | grep '"traceId":"<el-trace-id>"'
 - **Spring Actuator** expuesto en `/actuator/health` (con detalle de conexión a BD) y
   `/actuator/metrics`.
 - **Micrometer** con registro Prometheus en `/actuator/prometheus` — scrapeado por
-  [ObservabilityStack](../ObservabilityStack) cada 5s (job `user-service`).
+  [ObservabilityStack](https://github.com/UNO-POWER/ObservabilityStack) cada 5s (job `user-service`).
 - Este servicio no define métricas de negocio propias (a diferencia de Game Service, que expone los
   4 KPIs de HU-11): sus métricas son las estándar de Spring Boot (JVM, HTTP, HikariCP).
 
@@ -632,15 +629,12 @@ mvn test jacoco:report    # genera el reporte de cobertura
 
 ## 16. Despliegue
 
-- **Docker**: imagen multi-stage (`Dockerfile` en la raíz del repo) — build con Maven sobre
-  `eclipse-temurin:21`, runtime sobre `eclipse-temurin:21-jre-alpine`.
-- **Docker Compose (dev/prod)**: definido como servicio `user-service` en
-  [`docker-compose.yml`](../docker-compose.yml) (dev, con Postgres local) y en
-  [`deploy/docker-compose.prod.yml`](../deploy/docker-compose.prod.yml) (producción, contra RDS,
-  sin puerto publicado al host — solo accesible vía el API Gateway).
-- **AWS**: en producción corre como contenedor en la misma **EC2** que el resto del backend, contra
-  una instancia **RDS PostgreSQL** compartida (schema `user_db`). Ver el
-  [runbook de despliegue completo](../deploy/DEPLOY.md).
+- **Docker**: imagen multi-stage (`Dockerfile` en la raíz de este repositorio) — build con Maven
+  sobre `eclipse-temurin:21`, runtime sobre `eclipse-temurin:21-jre-alpine`.
+- **Orquestación**: en un despliegue completo se levanta con Docker Compose junto al resto de
+  servicios; en producción no publica puerto al host, solo es accesible vía el API Gateway.
+- **AWS**: corre como contenedor en la misma **EC2** que el resto del backend, contra una instancia
+  **RDS PostgreSQL** compartida (schema `user_db`).
 
 ---
 
@@ -650,7 +644,7 @@ mvn test jacoco:report    # genera el reporte de cobertura
 |---|---|---|
 | `Connection refused` al arrancar | Postgres no está corriendo o el puerto/host no coincide | Verificar `docker ps` y que `SPRING_DATASOURCE_URL` apunte al host correcto |
 | `401` en todos los requests protegidos aunque el login funcionó | `JWT_SECRET` distinto entre User Service y quien valida (Gateway/Game) | Verificar que la variable sea **exactamente** igual en los tres servicios |
-| `403` al llamar `/internal/**` desde Game Service | `INTERNAL_API_KEY` no coincide | Igualar el valor en `.env`/`docker-compose` de ambos servicios |
+| `403` al llamar `/internal/**` desde Game Service | `INTERNAL_API_KEY` no coincide | Igualar el valor de esa variable de entorno en ambos servicios |
 | `409` al registrar un usuario que "no existe" | El `username` ya fue tomado por otro registro previo (case-sensitive) | Elegir otro username; no hay recuperación de cuentas en esta versión |
 | Tests fallan por timeout de Mockito | JDK/Maven desalineados o dependencias corruptas | `mvn clean test`, verificar `java -version` = 21 |
 
@@ -682,17 +676,7 @@ Fuera del alcance de la entrega actual (Inception, 3 semanas), pendiente para un
 
 ---
 
-## 20. Licencia
-
-MIT — ver [`LICENSE`](../LICENSE) en el repositorio raíz. Proyecto académico (ARSW, Universidad),
-uso educativo.
-
----
-
-## 21. Autor
+## 20. Autor
 
 **DUCU** — Desarrollador Full-Stack (individual), proyecto de la asignatura ARSW.
 Organización GitHub: [UNO-POWER](https://github.com/UNO-POWER).
-
-Repositorio raíz del sistema (arquitectura completa, otros servicios, guía de despliegue):
-**[UNO Power-Ups Arena](../README.md)**.
