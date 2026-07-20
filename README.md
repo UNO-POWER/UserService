@@ -2,9 +2,10 @@
 
 > Autenticación, invitados y estadísticas de jugador — microservicio de **UNO Power-Ups Arena**.
 
+[![CI](https://github.com/UNO-POWER/UserService/actions/workflows/ci.yml/badge.svg)](https://github.com/UNO-POWER/UserService/actions/workflows/ci.yml)
 [![Java](https://img.shields.io/badge/Java-21-orange)]()
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-brightgreen)]()
-[![Tests](https://img.shields.io/badge/tests-11%20passing-success)]()
+[![Tests](https://img.shields.io/badge/tests-16%20passing-success)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 
 ---
@@ -346,15 +347,17 @@ salvo en desarrollo aislado. Los `/internal/**` solo deben ser llamados por otro
 
 ### `POST /api/usuarios/registro`
 
-Crea una cuenta y devuelve un JWT.
+Crea una cuenta (username + correo) y devuelve un JWT.
 
 - **Autenticación:** ninguna (ruta pública)
 - **Headers:** `Content-Type: application/json`
 
 **Body:**
 ```json
-{ "username": "ana", "password": "secreto123" }
+{ "username": "ana", "email": "ana@mail.com", "password": "secreto123" }
 ```
+
+El correo se normaliza a minúsculas antes de guardarse y debe ser único.
 
 **Respuesta `201 Created`:**
 ```json
@@ -369,18 +372,24 @@ Crea una cuenta y devuelve un JWT.
 
 | Código | Causa | Body |
 |---|---|---|
-| `400` | username/password no cumplen `@Valid` | `{ "error": "username: size must be between 3 and 40" }` |
+| `400` | username/email/password no cumplen `@Valid` | `{ "error": "username: size must be between 3 and 40" }` |
 | `409` | username ya existe | `{ "error": "El usuario 'ana' ya existe" }` |
+| `409` | correo ya registrado | `{ "error": "Ya existe una cuenta con el correo 'ana@mail.com'" }` |
 
 ---
 
 ### `POST /api/usuarios/login`
 
+Login **dual**: el campo `username` acepta el nombre de usuario **o** el correo registrado.
+
 - **Autenticación:** ninguna (ruta pública)
 
-**Body:**
+**Body (cualquiera de las dos formas):**
 ```json
 { "username": "ana", "password": "secreto123" }
+```
+```json
+{ "username": "ana@mail.com", "password": "secreto123" }
 ```
 
 **Respuesta `200 OK`:** igual forma que registro (`{ id, username, token }`).
@@ -389,7 +398,7 @@ Crea una cuenta y devuelve un JWT.
 
 | Código | Causa |
 |---|---|
-| `401` | usuario no existe o contraseña incorrecta (mismo mensaje en ambos casos) |
+| `401` | usuario/correo no existe o contraseña incorrecta (mismo mensaje en ambos casos) |
 
 ---
 
@@ -432,6 +441,31 @@ Estadísticas del usuario autenticado (HU-07).
 |---|---|
 | `404` | el `userId` no existe en `user_db` — típicamente porque es un invitado sin cuenta |
 | `400` | falta el header `X-User-Id` (solo ocurre si se llama directo al servicio, sin pasar por el Gateway) |
+
+---
+
+### `PATCH /api/usuarios/me`
+
+Cambia el nombre de usuario (Configuración del perfil). La respuesta incluye un **JWT re-emitido**
+con el claim `username` actualizado — el cliente debe adoptarlo como sesión nueva, porque el token
+anterior seguiría mostrando el nombre viejo en chat/roster.
+
+- **Autenticación:** **requerida** (vía Gateway → `X-User-Id`)
+
+**Body:**
+```json
+{ "username": "ana_renombrada" }
+```
+
+**Respuesta `200 OK`:** `{ id, username, token }` (token nuevo).
+
+**Errores:**
+
+| Código | Causa |
+|---|---|
+| `409` | el username nuevo ya está tomado por otra cuenta |
+| `404` | el `userId` es de un invitado (no persistido): los invitados no tienen perfil editable |
+| `400` | username no cumple `@Valid` (3–40 caracteres) |
 
 ---
 
@@ -480,6 +514,7 @@ erDiagram
     USUARIOS {
         varchar id PK
         varchar username UK
+        varchar email UK "nullable, unico, minusculas"
         varchar password_hash
         int partidas_jugadas
         int partidas_ganadas
@@ -491,10 +526,13 @@ erDiagram
 **Notas:**
 - No hay tabla separada de "estadísticas": los contadores viven directamente en `usuarios` (evita
   una relación 1-a-1 innecesaria para 3 enteros — YAGNI).
+- `email` es `nullable` con restricción `UNIQUE`: las cuentas creadas antes de exigir correo no lo
+  tienen, y Postgres permite múltiples `NULL` bajo un índice único. Se guarda normalizado a
+  minúsculas (el login dual lo busca así).
 - `ddl-auto: update` (Hibernate crea/actualiza el esquema automáticamente). Es una decisión
   pragmática documentada para el alcance de 3 semanas del Inception; antes de un uso productivo
   real se recomienda migrar a Flyway/Liquibase con migraciones versionadas.
-- Índice implícito por la restricción `UNIQUE` en `username` (usado en el lookup de login).
+- Índices implícitos por las restricciones `UNIQUE` en `username` y `email` (usados en el login dual).
 
 ---
 
@@ -568,16 +606,21 @@ mvn test jacoco:report    # genera el reporte de cobertura
 # abrir target/site/jacoco/index.html
 ```
 
-**11 tests** en [`UsuarioServiceTest`](src/test/java/com/unopower/userservice/service/UsuarioServiceTest.java)
+**16 tests** en [`UsuarioServiceTest`](src/test/java/com/unopower/userservice/service/UsuarioServiceTest.java)
 (JUnit 5 + Mockito), cubriendo:
 
 | Escenario | Qué verifica |
 |---|---|
-| Registro exitoso | emite JWT con claims correctos (`username`, `guest:false`) |
+| Registro exitoso | emite JWT con claims correctos (`username`, `guest:false`) y guarda el email |
 | Registro duplicado | `409`, no llama a `repository.save` |
+| Registro con correo ya usado | `409`; el correo se compara normalizado a minúsculas |
 | Password hasheado | el hash guardado empieza con `$2` (bcrypt) y nunca es igual al texto plano |
-| Login válido | JWT emitido con el username correcto |
+| Login válido por username | JWT emitido con el username correcto |
+| Login dual por correo | el mismo campo acepta el correo registrado |
 | Login inválido | contraseña incorrecta **y** usuario inexistente → mismo error |
+| Cambiar username | actualiza la cuenta y re-emite el JWT con el claim nuevo |
+| Cambiar a username tomado | `409`, la cuenta no se modifica |
+| Invitado no puede cambiar username | `404` (no persistido) |
 | Invitado (EC-07) | JWT con `sub` que empieza en `guest-` y claim `guest:true`, sin `save()` |
 | Estadísticas | refleja jugadas/ganadas/racha correctamente |
 | Racha con victorias consecutivas | crece; una derrota la corta a `0` |
