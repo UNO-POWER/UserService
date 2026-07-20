@@ -53,16 +53,18 @@ class UsuarioServiceTest {
     // ── HU-06 ────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("Gherkin HU-06: registro exitoso crea la cuenta y emite un JWT")
+    @DisplayName("Gherkin HU-06: registro exitoso crea la cuenta (con correo) y emite un JWT")
     void registroExitosoEmiteJwt() {
         when(repository.existsByUsername("ana")).thenReturn(false);
+        when(repository.existsByEmail("ana@mail.com")).thenReturn(false);
 
-        AuthResponse r = service.registrar(new RegistroRequest("ana", "secreto123"));
+        AuthResponse r = service.registrar(new RegistroRequest("ana", "ana@mail.com", "secreto123"));
 
         assertEquals("ana", r.username());
         Claims claims = claimsDe(r.token());
         assertEquals("ana", claims.get("username", String.class));
         assertEquals(false, claims.get("guest", Boolean.class));
+        verify(repository).save(argThat(u -> "ana@mail.com".equals(u.getEmail())));
     }
 
     @Test
@@ -70,7 +72,17 @@ class UsuarioServiceTest {
     void registroDuplicadoRechazado() {
         when(repository.existsByUsername("ana")).thenReturn(true);
         assertThrows(UsernameYaExisteException.class,
-                () -> service.registrar(new RegistroRequest("ana", "secreto123")));
+                () -> service.registrar(new RegistroRequest("ana", "ana@mail.com", "secreto123")));
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("registro con correo ya usado es rechazado (el correo se normaliza a minusculas)")
+    void registroEmailDuplicadoRechazado() {
+        when(repository.existsByUsername("ana2")).thenReturn(false);
+        when(repository.existsByEmail("ana@mail.com")).thenReturn(true);
+        assertThrows(EmailYaExisteException.class,
+                () -> service.registrar(new RegistroRequest("ana2", "Ana@Mail.com", "secreto123")));
         verify(repository, never()).save(any());
     }
 
@@ -78,17 +90,18 @@ class UsuarioServiceTest {
     @DisplayName("las contrasenas se guardan con bcrypt, nunca en claro")
     void passwordHasheadoConBcrypt() {
         when(repository.existsByUsername("ana")).thenReturn(false);
-        service.registrar(new RegistroRequest("ana", "secreto123"));
+        when(repository.existsByEmail(anyString())).thenReturn(false);
+        service.registrar(new RegistroRequest("ana", "ana@mail.com", "secreto123"));
 
         verify(repository).save(argThat(u ->
                 !u.getPasswordHash().equals("secreto123") && u.getPasswordHash().startsWith("$2")));
     }
 
     @Test
-    @DisplayName("login exitoso con credenciales correctas emite JWT")
+    @DisplayName("login exitoso con username emite JWT")
     void loginExitoso() {
-        Usuario ana = new Usuario("ana", new BCryptPasswordEncoder().encode("secreto123"));
-        when(repository.findByUsername("ana")).thenReturn(Optional.of(ana));
+        Usuario ana = new Usuario("ana", "ana@mail.com", new BCryptPasswordEncoder().encode("secreto123"));
+        when(repository.findByUsernameOrEmail("ana", "ana")).thenReturn(Optional.of(ana));
 
         AuthResponse r = service.login(new LoginRequest("ana", "secreto123"));
         assertEquals("ana", r.username());
@@ -96,16 +109,60 @@ class UsuarioServiceTest {
     }
 
     @Test
+    @DisplayName("login dual: el mismo campo acepta el correo registrado")
+    void loginPorEmail() {
+        Usuario ana = new Usuario("ana", "ana@mail.com", new BCryptPasswordEncoder().encode("secreto123"));
+        when(repository.findByUsernameOrEmail("ana@mail.com", "ana@mail.com")).thenReturn(Optional.of(ana));
+
+        AuthResponse r = service.login(new LoginRequest("ana@mail.com", "secreto123"));
+        assertEquals("ana", r.username());
+    }
+
+    @Test
     @DisplayName("login con contrasena incorrecta o usuario inexistente es rechazado igual")
     void loginInvalido() {
-        Usuario ana = new Usuario("ana", new BCryptPasswordEncoder().encode("secreto123"));
-        when(repository.findByUsername("ana")).thenReturn(Optional.of(ana));
-        when(repository.findByUsername("nadie")).thenReturn(Optional.empty());
+        Usuario ana = new Usuario("ana", "ana@mail.com", new BCryptPasswordEncoder().encode("secreto123"));
+        when(repository.findByUsernameOrEmail("ana", "ana")).thenReturn(Optional.of(ana));
+        when(repository.findByUsernameOrEmail("nadie", "nadie")).thenReturn(Optional.empty());
 
         assertThrows(CredencialesInvalidasException.class,
                 () -> service.login(new LoginRequest("ana", "malapass")));
         assertThrows(CredencialesInvalidasException.class,
                 () -> service.login(new LoginRequest("nadie", "secreto123")));
+    }
+
+    // ── Perfil: cambio de username ───────────────────────────────────────────
+
+    @Test
+    @DisplayName("cambiar username actualiza la cuenta y re-emite el JWT con el claim nuevo")
+    void cambiarUsernameReemiteJwt() {
+        Usuario ana = new Usuario("ana", "ana@mail.com", "hash");
+        when(repository.findById("id-ana")).thenReturn(Optional.of(ana));
+        when(repository.existsByUsername("anita")).thenReturn(false);
+
+        AuthResponse r = service.actualizarUsername("id-ana", "anita");
+
+        assertEquals("anita", r.username());
+        assertEquals("anita", ana.getUsername());
+        assertEquals("anita", claimsDe(r.token()).get("username", String.class));
+    }
+
+    @Test
+    @DisplayName("cambiar a un username ya tomado por otro es rechazado")
+    void cambiarUsernameDuplicadoRechazado() {
+        Usuario ana = new Usuario("ana", "ana@mail.com", "hash");
+        when(repository.findById("id-ana")).thenReturn(Optional.of(ana));
+        when(repository.existsByUsername("beto")).thenReturn(true);
+
+        assertThrows(UsernameYaExisteException.class, () -> service.actualizarUsername("id-ana", "beto"));
+        assertEquals("ana", ana.getUsername());
+    }
+
+    @Test
+    @DisplayName("un invitado (no persistido) no puede cambiar username")
+    void invitadoNoPuedeCambiarUsername() {
+        when(repository.findById("guest-1")).thenReturn(Optional.empty());
+        assertThrows(UsuarioNoEncontradoException.class, () -> service.actualizarUsername("guest-1", "otro"));
     }
 
     // ── EC-07: invitados ─────────────────────────────────────────────────────
