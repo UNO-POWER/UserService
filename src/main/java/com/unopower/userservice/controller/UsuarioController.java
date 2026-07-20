@@ -1,5 +1,6 @@
 package com.unopower.userservice.controller;
 
+import com.unopower.userservice.dto.ActualizarPerfilRequest;
 import com.unopower.userservice.dto.AuthResponse;
 import com.unopower.userservice.dto.EstadisticasResponse;
 import com.unopower.userservice.dto.GuestRequest;
@@ -40,10 +41,21 @@ public class UsuarioController {
 
     @GetMapping("/me/stats")
     public ResponseEntity<EstadisticasResponse> misEstadisticas(HttpServletRequest httpRequest) {
+        return ResponseEntity.ok(usuarioService.obtenerEstadisticas(userIdAutenticado(httpRequest)));
+    }
+
+    /** Cambia el username; devuelve un JWT re-emitido con el claim actualizado. */
+    @PatchMapping("/me")
+    public ResponseEntity<AuthResponse> actualizarPerfil(@Valid @RequestBody ActualizarPerfilRequest request,
+                                                          HttpServletRequest httpRequest) {
+        return ResponseEntity.ok(usuarioService.actualizarUsername(userIdAutenticado(httpRequest), request.username()));
+    }
+
+    private String userIdAutenticado(HttpServletRequest httpRequest) {
         String userId = httpRequest.getHeader("X-User-Id");
         if (userId == null || userId.isBlank()) {
             throw new IllegalStateException("Encabezado X-User-Id ausente (deberia venir del API Gateway)");
         }
-        return ResponseEntity.ok(usuarioService.obtenerEstadisticas(userId));
+        return userId;
     }
 }
